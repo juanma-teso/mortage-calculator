@@ -2,8 +2,8 @@
 
 CXX=g++ -g3 -o
 
-all: programa.cpp
-	$(CXX) programa programa.cpp
+all: mortage.cpp
+	$(CXX) program mortage.cpp
 
 clean:
-	rm -f *.o programa
+	rm -f *.o program
