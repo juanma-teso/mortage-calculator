@@ -1,33 +1,30 @@
 #include "mortage.hpp"
 #include <cmath>
 #include <iostream>
-#include <iomanip>
 #include <sstream>
 
-void setCurrentDate(std::time_t* time)
+Date getCurrentDate()
 {
-    std::time(time);
-    std::tm* result = std::localtime(time);
+    std::time_t time;
+    std::time(&time);
+    std::tm* result = std::localtime(&time);
     result->tm_mday = 1;
     result->tm_hour = 0;
     result->tm_min = 0;
     result->tm_sec = 0;
-    *time = std::mktime(result);
+    return Date(result->tm_year+1900, result->tm_mon+1);
 }
-std::time_t addOneMonth(std::tm* tm)
+
+Date::Date()
 {
-    if (tm->tm_mon == 11)
-    {
-        tm->tm_mon = 0;
-        tm->tm_year += 1;
-    }
-    else
-    {
-        tm->tm_mon += 1;
-    }
-    std::time_t t = std::mktime(tm);
-    tm = std::localtime(&t);
-    return t;
+    Date d = getCurrentDate();
+    year = d.year;
+    month = d.month;
+}
+Date::Date(int year, int month)
+{
+    this->year = year;
+    this->month = month;
 }
 
 void showTable(AmortizationTable& at)
@@ -38,38 +35,37 @@ void showTable(AmortizationTable& at)
     std::vector<Amortization>::iterator it;
 
     ss << std::fixed << std::setprecision(2);
-    ss << "   DATE  " << "  " << " PAYMENT" << "  " << "INTEREST" << "  " << "PRINCIPAL" << " | " << "REMAINDER" << " = " << "   DEBT   "  << " - " << "AMORTIZATION" << " " << "(PRINCIPAL" << " + " << "REDEMPTION)" << nl;
+    ss << "   DATE  " << "  " << " PAYMENT" << "  " << "INTEREST" << "  " << "PRINCIPAL" << " | " << "   DEBT   "  << " - " << "AMORTIZATION" << " " << "(PRINCIPAL" << " + " << "REDEMPTION)" << " = " << "REMAINDER" << nl;
     
     for(it = vec.begin(); it != vec.end(); it++)
     {
-        std::tm* date = std::localtime(&(it->date));
-        ss << "  " << std::setw(2) << (date->tm_mon + 1) << "/" << (date->tm_year + 1900);
+        ss << "  " << std::setw(8) << it->date;
         ss << "  " << std::setw(8) << it->paymentAmount << "  " << std::setw(8) << it->interestAmount << "  " << std::setw(9) << it->principalAmount;
-        ss << " | " << std::setw(9) << it->remainderAmount << " = " << std::setw(10) << it->debtAmount << " - " << std::setw(12) << (it->principalAmount + it->redemptionAmount);
-        ss << " (" << std::setw(9) << it->principalAmount << " + " << std::setw(10) << it->redemptionAmount << ")" << nl;
+        ss << " | " << std::setw(10) << it->debtAmount << " - " << std::setw(12) << (it->principalAmount + it->redemptionAmount);
+        ss << " (" << std::setw(9) << it->principalAmount << " + " << std::setw(10) << it->redemptionAmount << ")" << " = "  << std::setw(9) << it->remainderAmount << nl;
     }
     std::cout << ss.str() << std::endl;
 }
 
-Redemption::Redemption(std::time_t date)
+Redemption::Redemption(Date date)
 {
     redemptionAmount = 0;
     type = REDEEM_TIME;
     this->date = date;
 }
-Redemption::Redemption(double amount, RedemptionType redeemType, std::time_t redeemDate)
+Redemption::Redemption(Date redeemDate, double amount, RedemptionType redeemType)
 {
     redemptionAmount = amount;
     type = redeemType;
     date = redeemDate;
 }
-Interest::Interest(std::time_t date)
+Interest::Interest(Date date)
 {
     anualRatePercent = 0;
     monthRatePerunit = 0;
     this->date = date;
 }
-Interest::Interest(std::time_t date, double anualRate)
+Interest::Interest(Date date, double anualRate)
 {
     anualRatePercent = anualRate;
     monthRatePerunit = anualRate / 1200.0;
@@ -84,17 +80,23 @@ Amortization::Amortization()
     principalAmount = 0;
     redemptionAmount = 0;
     remainderAmount = 0;
-    setCurrentDate(&date);
+    date = getCurrentDate();
 }
-Amortization::Amortization(std::time_t date, double amount, double monthly, double interest, double redeem = 0)
+Amortization::Amortization(Date date, double amount, double monthly, double interest, double redeem = 0)
 {
+    this->date = date;
     debtAmount = amount;
     paymentAmount = monthly;
     interestAmount = interest;
     principalAmount = monthly - interest;
     redemptionAmount = redeem;
     remainderAmount = debtAmount - principalAmount - redemptionAmount;
-    this->date = date;
+    if (remainderAmount < 0.0)
+    {
+        remainderAmount = 0;
+        principalAmount = principalAmount > debtAmount ? debtAmount : principalAmount;
+        redemptionAmount = principalAmount > debtAmount ? 0 : debtAmount - principalAmount;
+    }
 }
 double AmortizationTable::calculateRedemption(Redemption& redemption)
 {
@@ -110,7 +112,7 @@ double AmortizationTable::calculateMortagePayment(double amount, double monthlyT
     double aux = std::pow(1 + monthlyTaxPerUnit, payments);
     return (amount * monthlyTaxPerUnit * aux) / (aux - 1);
 }
-Redemption AmortizationTable::getRedemption(std::time_t* date)
+Redemption AmortizationTable::getRedemption(Date* date)
 {
     std::vector<Redemption>::iterator it;
     for (it = _redeems.begin(); it != _redeems.end(); it++)
@@ -119,7 +121,7 @@ Redemption AmortizationTable::getRedemption(std::time_t* date)
     }
     return Redemption(*date);
 }
-Interest AmortizationTable::getInterest(std::time_t* date)
+Interest AmortizationTable::getInterest(Date* date)
 {
     std::vector<Interest>::iterator it;
     for (it = _interest.begin(); it != _interest.end(); it++)
@@ -137,13 +139,15 @@ AmortizationTable::AmortizationTable(double debtAmount, double anualTax, int ini
 }
 std::vector<Amortization> AmortizationTable::GetAmortizationTable()
 {
+    return _table;
+}
+void AmortizationTable::CalculateAmortization()
+{
     double debtAmount = _debtAmount;
     double mortageAmount = calculateMortagePayment(debtAmount, _anualInterest / 1200.0, _initialPayouts);
-    std::time_t t;
-    std::time(&_startDate);
-    std::tm* amortizationDate = std::localtime(&_startDate);
-    Interest interest(t);
-    Redemption redemption(t);
+    Date amortizationDate = _startDate;
+    Interest interest(amortizationDate);
+    Redemption redemption(amortizationDate);
 
     _paidAmount = 0;
     _interestAmount = 0;
@@ -154,23 +158,26 @@ std::vector<Amortization> AmortizationTable::GetAmortizationTable()
 
     while (debtAmount > 0)
     {
-        t = addOneMonth(amortizationDate);
-        interest = getInterest(&t);
-        redemption = getRedemption(&t);
+        interest = getInterest(&amortizationDate);
+        redemption = getRedemption(&amortizationDate);
         double taxAmount = calculateTaxAmount(interest);
         double redeem = calculateRedemption(redemption);
 
-        Amortization amortization(t, debtAmount, mortageAmount, taxAmount, redeem);
+        Amortization amortization(amortizationDate, debtAmount, mortageAmount, taxAmount, redeem);
         _table.push_back(amortization);
 
-        debtAmount -= amortization.principalAmount;
+        debtAmount -= amortization.principalAmount + amortization.redemptionAmount;
+        amortizationDate += 1;
         _finalPayouts ++;
         _interestAmount += amortization.interestAmount;
         _principalAmount += amortization.principalAmount;
         _redeemedAmount += amortization.redemptionAmount;
+        if (redemption.type == REDEEM_AMOUNT)
+        {
+            mortageAmount = calculateMortagePayment(debtAmount, interest.monthRatePerunit, _initialPayouts - _finalPayouts);
+        }
     }
     _paidAmount = _interestAmount + _principalAmount + _redeemedAmount;
-    return _table;
 }
 void AmortizationTable::AddRedemption(Redemption redeem)
 {
@@ -203,7 +210,7 @@ void AmortizationTable::DeleteRedemption(Redemption redeem)
         }
     }
 }
-void AmortizationTable::DeleteRedemption(std::time_t date)
+void AmortizationTable::DeleteRedemption(Date date)
 {
     std::vector<Redemption>::iterator it;
     for (it = _redeems.begin(); it != _redeems.end(); it++)
@@ -230,12 +237,77 @@ int main (void)
     double amount = 68000.0;
     double anualTaxPercent = 3;
     int years = 25;
-
+    Date redeemT;
     AmortizationTable table(amount, anualTaxPercent, years*12);
 
-    std::cout << "\n" << "AMORTIZATION TABLE (AMOUNT: " << table.GetDebtAmount() << " INTEREST: " << table.GetAnualInterest() << " PAYOUTS: " << table.GetPayoutsNum() << ")\n\n";
+    table.DeleteRedemptions();
+    table.CalculateAmortization();
+    std::cout << "NO AMORTIZATION:\n" << table << std::endl;
     showTable(table);
-    std::cout << "\n" << table << std::endl;
+    
+    redeemT = table.GetStartDate();
+    for (int index = 0; index < 24; index++)
+    {
+        table.AddRedemption(Redemption(redeemT, 400, REDEEM_AMOUNT));
+        redeemT += 1;
+    }
+    table.CalculateAmortization();
+    std::cout << "AMORTIZATION: 24 * 400 | AMOUNT:\n" << table << std::endl;
+    showTable(table);
+
+    table.DeleteRedemptions();
+    redeemT = table.GetStartDate();
+    for (int index = 0; index < 24; index++)
+    {
+        table.AddRedemption(Redemption(redeemT, 400, REDEEM_TIME));
+        redeemT += 1;
+    }
+    table.CalculateAmortization();
+    std::cout << "AMORTIZATION: 24 * 400 | TIME:\n" << table << std::endl;
+    showTable(table);
+
+    table.DeleteRedemptions();
+    redeemT = table.GetStartDate();
+    for (int index = 0; index < table.GetPayoutsNum(); index++)
+    {
+        table.CalculateAmortization();
+        std::vector<Amortization> am = table.GetAmortizationTable();
+        if (index < 24)
+        {
+            table.AddRedemption(Redemption(redeemT, 500, REDEEM_TIME));
+        }
+        else
+        {
+            table.AddRedemption(Redemption(redeemT, 180, REDEEM_TIME));
+        }
+        redeemT += 1;
+    }
+    table.CalculateAmortization();
+    std::cout << "AMORTIZATION: 24 * 500 -> 500 - payment | TIME:\n" << table << std::endl;
+    showTable(table);
+
+    table.DeleteRedemptions();
+    redeemT = table.GetStartDate();
+    for (int index = 0; index < table.GetPayoutsNum(); index++)
+    {
+        table.CalculateAmortization();
+        std::vector<Amortization> am = table.GetAmortizationTable();
+        if (index < 12)
+        {
+            table.AddRedemption(Redemption(redeemT, 500, REDEEM_TIME));
+        }
+        else
+        {
+            table.AddRedemption(Redemption(redeemT, 700 - am[index].paymentAmount, REDEEM_TIME));
+        }
+        redeemT += 1;
+    }
+    table.CalculateAmortization();
+    std::cout << "AMORTIZATION: 12 * 500 -> 60 * 700 - payment | TIME:\n" << table << std::endl;
+    showTable(table);
+
+
+    
     return 0;
 }
 
