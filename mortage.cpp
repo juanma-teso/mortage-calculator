@@ -51,28 +51,6 @@ void showTable(AmortizationTable& at)
     std::cout << ss.str() << std::endl;
 }
 
-Amortization::Amortization()
-{
-    debtAmount = 0;
-    paymentAmount = 0;
-    interestAmount = 0;
-    principalAmount = 0;
-    redemptionAmount = 0;
-    remainderAmount = 0;
-    setCurrentDate(&date);
-}
-Amortization::Amortization(std::time_t date, double amount, double monthly, double interest, double redeem = 0)
-{
-    debtAmount = amount;
-    paymentAmount = monthly;
-    interestAmount = interest;
-    principalAmount = monthly - interest;
-    redemptionAmount = redeem;
-    remainderAmount = debtAmount - principalAmount - redemptionAmount;
-    this->date = date;
-}
-
-
 Redemption::Redemption(std::time_t date)
 {
     redemptionAmount = 0;
@@ -98,10 +76,34 @@ Interest::Interest(std::time_t date, double anualRate)
     this->date = date;
 }
 
-
+Amortization::Amortization()
+{
+    debtAmount = 0;
+    paymentAmount = 0;
+    interestAmount = 0;
+    principalAmount = 0;
+    redemptionAmount = 0;
+    remainderAmount = 0;
+    setCurrentDate(&date);
+}
+Amortization::Amortization(std::time_t date, double amount, double monthly, double interest, double redeem = 0)
+{
+    debtAmount = amount;
+    paymentAmount = monthly;
+    interestAmount = interest;
+    principalAmount = monthly - interest;
+    redemptionAmount = redeem;
+    remainderAmount = debtAmount - principalAmount - redemptionAmount;
+    this->date = date;
+}
+double AmortizationTable::calculateRedemption(Redemption& redemption)
+{
+    return redemption.redemptionAmount;
+}
 double AmortizationTable::calculateTaxAmount(Interest& interest)
 {
-    return _table.back().remainderAmount * interest.monthRatePerunit;
+    double remainder = _table.size() > 0 ? _table.back().remainderAmount : _debtAmount;
+    return remainder * interest.monthRatePerunit;
 }
 double AmortizationTable::calculateMortagePayment(double amount, double monthlyTaxPerUnit, double payments)
 {
@@ -132,15 +134,14 @@ AmortizationTable::AmortizationTable(double debtAmount, double anualTax, int ini
     _debtAmount = debtAmount;
     _anualInterest = anualTax;
     _initialPayouts = initialPayouts;
-    setCurrentDate(&_startDate);
 }
 std::vector<Amortization> AmortizationTable::GetAmortizationTable()
 {
     double debtAmount = _debtAmount;
     double mortageAmount = calculateMortagePayment(debtAmount, _anualInterest / 1200.0, _initialPayouts);
     std::time_t t;
-    std::time(&t);
-    std::tm* amortizationDate = std::localtime(&t);
+    std::time(&_startDate);
+    std::tm* amortizationDate = std::localtime(&_startDate);
     Interest interest(t);
     Redemption redemption(t);
 
@@ -153,12 +154,13 @@ std::vector<Amortization> AmortizationTable::GetAmortizationTable()
 
     while (debtAmount > 0)
     {
+        t = addOneMonth(amortizationDate);
         interest = getInterest(&t);
         redemption = getRedemption(&t);
         double taxAmount = calculateTaxAmount(interest);
         double redeem = calculateRedemption(redemption);
 
-        Amortization amortization(addOneMonth(amortizationDate), debtAmount, mortageAmount, taxAmount, redeem);
+        Amortization amortization(t, debtAmount, mortageAmount, taxAmount, redeem);
         _table.push_back(amortization);
 
         debtAmount -= amortization.principalAmount;
